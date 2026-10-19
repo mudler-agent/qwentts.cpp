@@ -99,4 +99,8 @@ Q8 codec from `Serveurperso/Qwen3-TTS-GGUF`, revision
 | Input cancellation | `QT_STATUS_CANCELLED` after three audio chunks |
 
 These timings describe one smoke run, not a performance guarantee.
-Intelligibility and multilingual speech quality remain pending evaluation.
+A local Parakeet TDT-CTC 110M Q8 transcription recovered the expected words
+from both baseline and incremental audio: “Hello there This is a streaming
+test”. This one short English sample establishes a smoke check only.
+Speaker similarity, prosody, long inputs and multilingual speech quality
+remain pending evaluation.
