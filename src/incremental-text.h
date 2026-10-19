@@ -23,10 +23,18 @@ public:
         }
         switch (event) {
             case Event::append:
-                if (state == State::draining || bytes.empty() || bytes.size() > limit || tail.size() > limit - bytes.size()) {
+                if (state == State::draining || bytes.empty() || bytes.size() > limit || tail.size() > 2 * limit - bytes.size()) {
                     state = State::failed; rule = "R6-invalid-input"; return false;
                 }
                 tail += bytes;
+                // One incoming chunk can complete an existing tail. Validate
+                // each canonical unit and final suffix before rejecting it.
+                for (size_t pos = 0; pos < tail.size();) {
+                    size_t n = boundary(pos);
+                    if (!n) n = tail.size() - pos;
+                    if (n > limit) { state = State::failed; rule = "R6-invalid-input"; return false; }
+                    pos += n;
+                }
                 state = boundary() ? State::ready : State::waiting;
                 rule = "R1-append"; return true;
             case Event::finish:
@@ -72,15 +80,15 @@ public:
     }
 
 private:
-    size_t boundary() const {
+    size_t boundary(size_t start = 0) const {
         // Canonical units do not depend on producer chunk boundaries:
         // whitespace-prefixed words, or one CJK/Hangul/Kana codepoint.
         // CJK units deliberately prevent cross-character BPE merges.
         bool content = false;
-        for (size_t i = 0; i < tail.size();) {
+        for (size_t i = start; i < tail.size();) {
             unsigned char c = (unsigned char)tail[i];
             if (c < 128 && std::isspace(c)) {
-                if (content) return i;
+                if (content) return i - start;
                 ++i; continue;
             }
             size_t n = c < 128 ? 1 : c >= 0xc2 && c <= 0xdf ? 2 : c >= 0xe0 && c <= 0xef ? 3 : c >= 0xf0 && c <= 0xf4 ? 4 : 1;
@@ -90,7 +98,7 @@ private:
             bool script = (cp >= 0x3000 && cp <= 0x30ff) || (cp >= 0x3400 && cp <= 0x9fff) ||
                           (cp >= 0xac00 && cp <= 0xd7af) || (cp >= 0xf900 && cp <= 0xfaff) ||
                           (cp >= 0xff00 && cp <= 0xffef) || (cp >= 0x20000 && cp <= 0x323af);
-            if (script) return content ? i : i + n;
+            if (script) return content ? i - start : i + n - start;
             content = true;
             i += n;
         }

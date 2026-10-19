@@ -8,7 +8,9 @@ The function uses the original Qwen3-TTS streaming text alignment: the first
 text token joins codec BOS in the prefill. Each subsequent acoustic frame
 consumes one projected text token. Input EOF supplies text EOS once, followed
 by text padding until the model emits codec EOS. The existing `qt_synthesize`
-path keeps its full-text prompt and output behavior.
+path keeps its full-text prompt and output behavior. Public parameter
+structures and their initializers retain the original ABI 6 layout.
+Incremental callbacks live in the internal request, not the public struct.
 
 ## C API
 
@@ -36,7 +38,8 @@ punctuation commit complete codepoints immediately. These canonical units
 produce the same token sequence for every partition of the input bytes.
 CJK units disable cross-character BPE merges; quality must be checked
 separately from the full-text tokenizer. The unfinished tail has a 65536-byte
-limit. UTF-8 codepoints may cross chunks; invalid committed UTF-8, NUL bytes,
+limit. One unread chunk may coexist with that tail; complete units drain
+before the next pull. UTF-8 codepoints may cross chunks; invalid committed UTF-8, NUL bytes,
 and reserved `<|` token delimiters fail the request. Other scripts without whitespace wait until a word boundary or EOF.
 
 When text runs out, the input callback can block waiting for the producer.

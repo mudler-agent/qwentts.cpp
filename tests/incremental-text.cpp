@@ -55,6 +55,29 @@ int main() {
         for (char byte : sample) bytes.emplace_back(1, byte);
         assert(collect(bytes) == expected);
     }
+    // A legal producer chunk may complete a previous tail before supplying
+    // many small words. The bound applies to unfinished units, not their sum.
+    IncrementalText large;
+    assert(large.apply(E::append, "x"));
+    assert(large.apply(E::append, std::string(" ") + std::string(65535, ' ')));
+    assert(large.take() == "x");
+    assert(large.tail.size() == IncrementalText::limit);
+    assert(large.apply(E::finish));
+    assert(large.take().size() == IncrementalText::limit);
+    IncrementalText many_words;
+    assert(many_words.apply(E::append, "x"));
+    std::string full_chunk = " ";
+    for (size_t i = 0; i < 32767; ++i) full_chunk += "a ";
+    full_chunk += "z";
+    assert(full_chunk.size() == IncrementalText::limit);
+    assert(many_words.apply(E::append, full_chunk));
+    size_t committed = 0;
+    for (;;) { auto unit = many_words.take(); if (unit.empty()) break; committed += unit.size(); }
+    assert(committed + many_words.tail.size() == 65537);
+    assert(many_words.tail == " z");
+    IncrementalText oversized_word;
+    assert(oversized_word.apply(E::append, std::string(65536, 'x')));
+    assert(!oversized_word.apply(E::append, "x "));
     IncrementalText cjk;
     assert(cjk.apply(E::append, "你") && cjk.state == S::ready);
     assert(cjk.take() == "你" && cjk.state == S::waiting); // no EOF needed

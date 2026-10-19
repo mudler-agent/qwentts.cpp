@@ -742,7 +742,7 @@ static int incremental_next_id(TtsSlot & s, BPETokenizer * tok, int32_t * id) {
         if (s.input.state == IncrementalText::State::done) return 0;
         const char * bytes = nullptr;
         size_t n = 0;
-        int r = p->next_text(p->text_user_data, &bytes, &n);
+        int r = s.job->next_text(s.job->text_user_data, &bytes, &n);
         if (r == -1) { s.input.apply(IncrementalText::Event::cancel); return -1; }
         if (r == 0) { s.input.apply(IncrementalText::Event::finish); continue; }
         if (r != 1 || !bytes || !n || n > IncrementalText::limit ||
@@ -905,7 +905,7 @@ bool tts_engine_admit(TtsEngine * e, TtsJob * job) {
     // language id and the model infers it from the text.
     const char * lang = params->lang ? params->lang : "auto";
 
-    const bool incremental = params->abi_version >= 7 && params->next_text;
+    const bool incremental = job->next_text != nullptr;
     int32_t first_text_id = 0;
     if (incremental) {
         int r = incremental_next_id(s, e->tok, &first_text_id);
@@ -1144,7 +1144,7 @@ void tts_engine_step(TtsEngine * e, std::vector<TtsJob *> * retired) {
         std::vector<float>   overlays((size_t) hidden * (size_t) N_dec);
         for (int i = 0; i < N_dec; i++) {
             TtsSlot & s = e->slots[(size_t) i];
-            if (s.job->params->abi_version >= 7 && s.job->params->next_text && !s.text_eos_sent) {
+            if (s.job->next_text != nullptr && !s.text_eos_sent) {
                 int32_t text_id;
                 int r = incremental_next_id(s, e->tok, &text_id);
                 if (r < 0) {
@@ -1225,7 +1225,7 @@ void tts_engine_step(TtsEngine * e, std::vector<TtsJob *> * retired) {
         // codec_eos. Then run the upstream sampling chain.
         Timer t_host;
         apply_suppress(s.logits.data(), vocab, vocab - 1024, vocab, codec_eos_id);
-        if (p->abi_version >= 7 && p->next_text && !s.text_eos_sent) {
+        if (s.job->next_text != nullptr && !s.text_eos_sent) {
             s.logits[(size_t)codec_eos_id] = -INFINITY;
         }
         float u_c0 = 0.0f;
@@ -1391,7 +1391,7 @@ void tts_engine_step(TtsEngine * e, std::vector<TtsJob *> * retired) {
                     }
                     if (s.step >= p->max_new_tokens) {
                         s.finished = true;
-                        if (p->abi_version >= 7 && p->next_text) {
+                        if (s.job->next_text != nullptr) {
                             s.fin_status = QT_STATUS_GENERATE_FAILED;
                             qt_set_error("incremental input: max_new_tokens reached before model EOS");
                         }
@@ -1450,7 +1450,7 @@ void tts_engine_step(TtsEngine * e, std::vector<TtsJob *> * retired) {
             } else if (e->codec_pending_n >= e->codec_target) {
                 ok = tts_engine_codec_flush(e);
                 if (ok && e->codec_target < (1 << (CODEC_STREAM_CLASSES - 1)) &&
-                    !(e->slots[0].job->params->abi_version >= 7 && e->slots[0].job->params->next_text)) {
+                    !(e->slots[0].job->next_text != nullptr)) {
                     e->codec_target <<= 1;
                 }
             }

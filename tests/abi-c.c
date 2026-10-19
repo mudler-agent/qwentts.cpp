@@ -62,6 +62,25 @@ static void stub_log(enum qt_log_level level, const char * msg, void * user_data
 
 int main(void) {
     if (qt_synthesize_incremental(NULL, NULL, stub_text, NULL) != QT_STATUS_INVALID_PARAMS) return 1;
+    /* ABI 6 ends at ref_T. A legacy caller allocates exactly this extent.
+     * Preserve adjacent memory when the old initializer symbol is called. */
+    {
+        const size_t legacy_size = (offsetof(struct qt_tts_params, ref_T) + sizeof(int) +
+                                    sizeof(void *) - 1) / sizeof(void *) * sizeof(void *);
+        unsigned char * probe = (unsigned char *)malloc(legacy_size + 16);
+        size_t i;
+        if (!probe) return 1;
+        memset(probe, 0xab, legacy_size + 16);
+        qt_tts_default_params((struct qt_tts_params *)(void *)probe);
+        for (i = 0; i < 16; ++i) {
+            if (probe[legacy_size + i] != 0xab) {
+                fprintf(stderr, "ABI 6 initializer overwrites its allocation\n");
+                free(probe);
+                return 1;
+            }
+        }
+        free(probe);
+    }
     /* Static version string, always reachable. */
     const char * version = qt_version();
     printf("[Probe] %s\n", version);

@@ -60,7 +60,7 @@ extern "C" {
 // git short hash + commit date string returned by qt_version(); for
 // binding compat checks, QT_ABI_VERSION is the only number that
 // matters.
-#define QT_ABI_VERSION 7
+#define QT_ABI_VERSION 6
 
 // Oldest struct layout this build addresses. A v4 or older
 // qt_tts_params places its trailing fields at offsets this build does
@@ -363,10 +363,6 @@ struct qt_tts_params {
     const int32_t * ref_codes;
     int             ref_T;
 
-    // ABI 7: internal dispatch for qt_synthesize_incremental. Leave NULL
-    // when using qt_synthesize. No callback fields are read for ABI <= 6.
-    qt_text_input_cb next_text;
-    void *          text_user_data;
 };
 
 // Initialise to the standard defaults. Strings NULL, seed -1, sampling
@@ -392,7 +388,7 @@ QT_API int qt_num_codebooks(const struct qt_context * q);
 // Blocks until final audio drains. Requires on_chunk and max_batch=1.
 // params.text is ignored. ICL (ref_text/ref_codes) is unsupported; x-vector
 // voice references remain supported. The input callback owns backpressure;
-// native code retains only one bounded mutable tail and its token block.
+// native code retains a bounded tail, one unread chunk and a token block.
 // Audio callback false cancels. Cancellation while waiting for input must
 // wake next_text as described above. Original weights use streaming text
 // alignment; quality depends on the checkpoint and must be evaluated.
