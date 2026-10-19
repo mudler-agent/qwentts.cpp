@@ -17,6 +17,7 @@
 // part of this public ABI.
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #ifdef __cplusplus
@@ -59,7 +60,7 @@ extern "C" {
 // git short hash + commit date string returned by qt_version(); for
 // binding compat checks, QT_ABI_VERSION is the only number that
 // matters.
-#define QT_ABI_VERSION 6
+#define QT_ABI_VERSION 7
 
 // Oldest struct layout this build addresses. A v4 or older
 // qt_tts_params places its trailing fields at offsets this build does
@@ -222,6 +223,14 @@ QT_API void qt_voice_ref_free(struct qt_voice_ref * ref);
 // audio frame, i.e. 1 / 12 Hz ~ 83 ms.
 typedef bool (*qt_cancel_cb)(void * user_data);
 
+// Pull incremental UTF-8 input on the compute worker. Return 1 for a nonempty
+// chunk (at most 65536 bytes), 0 for end of input, -1 for cancellation.
+// The pointer stays valid until the next invocation. Chunks may split UTF-8
+// codepoints. A mutable word tail is buffered up to 65536 bytes. The callback
+// may block; it MUST wake and return -1 on disconnect/cancellation. Do not
+// call blocking qt_* functions from this callback or the audio callback.
+typedef int (*qt_text_input_cb)(void * user_data, const char ** text, size_t * n_bytes);
+
 // Streaming output callback. When set on qt_tts_params, the synth
 // pipeline runs in streaming mode: audio is decoded chunk by chunk from
 // the AR codec frames and emitted through this callback rather than
@@ -353,6 +362,11 @@ struct qt_tts_params {
     int             ref_spk_dim;
     const int32_t * ref_codes;
     int             ref_T;
+
+    // ABI 7: internal dispatch for qt_synthesize_incremental. Leave NULL
+    // when using qt_synthesize. No callback fields are read for ABI <= 6.
+    qt_text_input_cb next_text;
+    void *          text_user_data;
 };
 
 // Initialise to the standard defaults. Strings NULL, seed -1, sampling
@@ -374,6 +388,17 @@ QT_API int qt_num_codebooks(const struct qt_context * q);
 // through the callback and `out` stays empty. Returns QT_STATUS_OK on
 // success; on any failure returns a negative qt_status describing the
 // cause and leaves `out` empty.
+// Incremental text-in/audio-out, one persistent Talker KV and codec state.
+// Blocks until final audio drains. Requires on_chunk and max_batch=1.
+// params.text is ignored. ICL (ref_text/ref_codes) is unsupported; x-vector
+// voice references remain supported. The input callback owns backpressure;
+// native code retains only one bounded mutable tail and its token block.
+// Audio callback false cancels. Cancellation while waiting for input must
+// wake next_text as described above. Original weights use streaming text
+// alignment; quality depends on the checkpoint and must be evaluated.
+QT_API enum qt_status qt_synthesize_incremental(struct qt_context * q,
+    const struct qt_tts_params * params, qt_text_input_cb next_text, void * text_user_data);
+
 QT_API enum qt_status qt_synthesize(struct qt_context * q, const struct qt_tts_params * params, struct qt_audio * out);
 
 // Convert a duration in seconds to a frame count using the codec

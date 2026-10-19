@@ -22,6 +22,11 @@
 #include <stdlib.h>
 #include <string.h>
 
+static int stub_text(void * ud, const char ** text, size_t * n_bytes) {
+    (void)ud; (void)text; (void)n_bytes;
+    return 0;
+}
+
 static bool stub_cancel(void * ud) {
     (void) ud;
     return false;
@@ -56,6 +61,7 @@ static void stub_log(enum qt_log_level level, const char * msg, void * user_data
 }
 
 int main(void) {
+    if (qt_synthesize_incremental(NULL, NULL, stub_text, NULL) != QT_STATUS_INVALID_PARAMS) return 1;
     /* Static version string, always reachable. */
     const char * version = qt_version();
     printf("[Probe] %s\n", version);

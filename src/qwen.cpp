@@ -267,6 +267,8 @@ void qt_tts_default_params(struct qt_tts_params * p) {
     p->ref_spk_dim           = 0;
     p->ref_codes             = nullptr;
     p->ref_T                 = 0;
+    p->next_text             = nullptr;
+    p->text_user_data        = nullptr;
 }
 
 int qt_num_codebooks(const struct qt_context * q) {
@@ -631,11 +633,16 @@ enum qt_status qt_synthesize(struct qt_context * q, const struct qt_tts_params *
         return QT_STATUS_INVALID_PARAMS;
     }
 
-    if (!params->text || !params->text[0]) {
+    if (!(params->abi_version >= 7 && params->next_text) && (!params->text || !params->text[0])) {
         qt_set_error("qt_synthesize: params->text is NULL or empty");
         if (out) {
             qt_audio_free(out);
         }
+        return QT_STATUS_INVALID_PARAMS;
+    }
+    if (params->abi_version >= 7 && params->next_text &&
+        (!params->on_chunk || q->pt.max_batch != 1 || params->ref_text || params->ref_codes)) {
+        qt_set_error("incremental input requires audio callback, max_batch=1 and no ICL reference");
         return QT_STATUS_INVALID_PARAMS;
     }
     if (params->lang && !qt_language_known(q, params->lang)) {
@@ -746,6 +753,20 @@ enum qt_status qt_synthesize(struct qt_context * q, const struct qt_tts_params *
         }
         return QT_STATUS_GENERATE_FAILED;
     }
+}
+
+enum qt_status qt_synthesize_incremental(struct qt_context * q, const struct qt_tts_params * params,
+                                        qt_text_input_cb next_text, void * text_user_data) {
+    if (!q || !params || !next_text || params->abi_version != QT_ABI_VERSION || !params->on_chunk ||
+        q->pt.max_batch != 1 || params->ref_text || params->ref_codes) {
+        qt_set_error("qt_synthesize_incremental: requires ABI 7, audio/input callbacks, max_batch=1 and no ICL reference");
+        return QT_STATUS_INVALID_PARAMS;
+    }
+    struct qt_tts_params copy = *params;
+    copy.next_text = next_text;
+    copy.text_user_data = text_user_data;
+    copy.text = NULL;
+    return qt_synthesize(q, &copy, NULL);
 }
 
 int qt_duration_sec_to_tokens(const struct qt_context * q, float duration_sec) {
